@@ -7,18 +7,27 @@ class Profile {
     const result = await pool.request()
       .input('userId', sql.Int, profileData.userId)
       .input('householdSize', sql.Int, profileData.householdSize)
-      .input('defaultAppliances', sql.Int, profileData.defaultAppliances)
-      .input('defaultUsageHours', sql.Int, profileData.defaultUsageHours)
-      .input('defaultTemperature', sql.Decimal(4,1), profileData.defaultTemperature)
-      .input('defaultHumidity', sql.Int, profileData.defaultHumidity)
-      .input('defaultPerUnitRate', sql.Decimal(6,2), profileData.defaultPerUnitRate)
+      .input('defaultTemperature', sql.Decimal(5, 2), profileData.defaultTemperature)
+      .input('defaultHumidity', sql.Decimal(5, 2), profileData.defaultHumidity)
+      .input('defaultPerUnitRate', sql.Decimal(10, 2), profileData.defaultPerUnitRate)
       .query(`
-        INSERT INTO UserProfiles (UserId, HouseholdSize, DefaultAppliances, DefaultUsageHours, 
-                                  DefaultTemperature, DefaultHumidity, DefaultPerUnitRate)
+        INSERT INTO UserProfiles (
+          UserId,
+          HouseholdSize,
+          DefaultTemperature,
+          DefaultHumidity,
+          DefaultPerUnitRate
+        )
         OUTPUT INSERTED.Id
-        VALUES (@userId, @householdSize, @defaultAppliances, @defaultUsageHours, 
-                @defaultTemperature, @defaultHumidity, @defaultPerUnitRate)
+        VALUES (
+          @userId,
+          @householdSize,
+          @defaultTemperature,
+          @defaultHumidity,
+          @defaultPerUnitRate
+        )
       `);
+
     return result.recordset[0].Id;
   }
 
@@ -26,8 +35,49 @@ class Profile {
     const pool = await poolPromise;
     const result = await pool.request()
       .input('userId', sql.Int, userId)
-      .query('SELECT * FROM UserProfiles WHERE UserId = @userId');
+      .query(`
+        SELECT
+          Id,
+          UserId,
+          HouseholdSize,
+          DefaultTemperature,
+          DefaultHumidity,
+          DefaultPerUnitRate,
+          CreatedAt,
+          UpdatedAt
+        FROM UserProfiles
+        WHERE UserId = @userId
+      `);
+
     return result.recordset[0];
+  }
+
+  static async upsert(profileData) {
+    const existing = await this.findByUserId(profileData.userId);
+
+    if (!existing) {
+      return this.create(profileData);
+    }
+
+    const pool = await poolPromise;
+    await pool.request()
+      .input('userId', sql.Int, profileData.userId)
+      .input('householdSize', sql.Int, profileData.householdSize)
+      .input('defaultTemperature', sql.Decimal(5, 2), profileData.defaultTemperature)
+      .input('defaultHumidity', sql.Decimal(5, 2), profileData.defaultHumidity)
+      .input('defaultPerUnitRate', sql.Decimal(10, 2), profileData.defaultPerUnitRate)
+      .query(`
+        UPDATE UserProfiles
+        SET
+          HouseholdSize = @householdSize,
+          DefaultTemperature = @defaultTemperature,
+          DefaultHumidity = @defaultHumidity,
+          DefaultPerUnitRate = @defaultPerUnitRate,
+          UpdatedAt = GETDATE()
+        WHERE UserId = @userId
+      `);
+
+    return existing.Id;
   }
 
   static async update(userId, profileData) {
@@ -35,19 +85,27 @@ class Profile {
     await pool.request()
       .input('userId', sql.Int, userId)
       .input('householdSize', sql.Int, profileData.householdSize)
-      .input('defaultAppliances', sql.Int, profileData.defaultAppliances)
-      .input('defaultUsageHours', sql.Int, profileData.defaultUsageHours)
-      .input('defaultTemperature', sql.Decimal(4,1), profileData.defaultTemperature)
-      .input('defaultHumidity', sql.Int, profileData.defaultHumidity)
-      .input('defaultPerUnitRate', sql.Decimal(6,2), profileData.defaultPerUnitRate)
+      .input('defaultTemperature', sql.Decimal(5, 2), profileData.defaultTemperature)
+      .input('defaultHumidity', sql.Decimal(5, 2), profileData.defaultHumidity)
+      .input('defaultPerUnitRate', sql.Decimal(10, 2), profileData.defaultPerUnitRate)
       .query(`
-        UPDATE UserProfiles SET 
+        UPDATE UserProfiles
+        SET
           HouseholdSize = @householdSize,
-          DefaultAppliances = @defaultAppliances,
-          DefaultUsageHours = @defaultUsageHours,
           DefaultTemperature = @defaultTemperature,
           DefaultHumidity = @defaultHumidity,
-          DefaultPerUnitRate = @defaultPerUnitRate
+          DefaultPerUnitRate = @defaultPerUnitRate,
+          UpdatedAt = GETDATE()
+        WHERE UserId = @userId
+      `);
+  }
+
+  static async deleteByUserId(userId) {
+    const pool = await poolPromise;
+    await pool.request()
+      .input('userId', sql.Int, userId)
+      .query(`
+        DELETE FROM UserProfiles
         WHERE UserId = @userId
       `);
   }

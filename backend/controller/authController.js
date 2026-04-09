@@ -5,9 +5,7 @@ const jwt = require('jsonwebtoken');
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-    
-    console.log('Received:', { name, email, password, role });
-    
+
     if (!name || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }
@@ -21,20 +19,20 @@ exports.register = async (req, res) => {
       return res.status(400).json({ error: 'User with this email already exists' });
     }
 
-    // Pass RAW password as 'password' field - let model handle hashing
     const userId = await User.create({ 
       name, 
       email, 
-      password,  // <- CHANGED: Use 'password' not 'PasswordHash'
+      password,  
+
       role: role || 'user' 
     });
-    
+
     const token = jwt.sign({ id: userId }, process.env.JWT_SECRET, { 
       expiresIn: '7d' 
     });
-    
+
     const user = await User.findById(userId);
-    
+
     res.status(201).json({
       success: true,
       token,
@@ -51,11 +49,10 @@ exports.register = async (req, res) => {
   }
 };
 
-
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
     }
@@ -102,7 +99,7 @@ exports.getAllUsers = async (req, res) => {
       FROM Users 
       ORDER BY CreatedAt DESC
     `);
-    
+
     res.json({
       success: true,
       users: result.recordset
@@ -111,3 +108,4 @@ exports.getAllUsers = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+

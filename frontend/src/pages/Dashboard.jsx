@@ -5,7 +5,7 @@ import {
   Zap, TrendingUp, BarChart3, Wallet,
   ArrowRight, AlertTriangle, CheckCircle2,
   Calendar, TrendingDown, Minus, LineChart,
-  BrainCircuit, Thermometer, Clock
+  BrainCircuit, Thermometer, Clock, Users, Droplets, DollarSign
 } from "lucide-react";
 
 export default function Dashboard() {
@@ -24,51 +24,55 @@ export default function Dashboard() {
     const token = localStorage.getItem("token");
     const headers = { Authorization: `Bearer ${token}` };
     try {
-      const [statsRes, historyRes, profileRes] = await Promise.allSettled([
+      const [statsRes, historyRes, profileRes] = await Promise.all([
         axios.get("http://localhost:5000/api/prediction/stats", { headers }),
         axios.get("http://localhost:5000/api/prediction/history", { headers }),
         axios.get("http://localhost:5000/api/profile/", { headers }),
       ]);
-      if (statsRes.status === "fulfilled") setStats(statsRes.value.data);
-      if (historyRes.status === "fulfilled") setHistory(historyRes.value.data?.predictions || []);
-      if (profileRes.status === "fulfilled") setProfile(profileRes.value.data?.profile);
+
+      if (statsRes.data) setStats(statsRes.data);
+
+      const histData = historyRes.data;
+      if (Array.isArray(histData)) setHistory(histData);
+      else if (Array.isArray(histData?.predictions)) setHistory(histData.predictions);
+      else if (Array.isArray(histData?.data)) setHistory(histData.data);
+      else setHistory([]);
+
+      if (profileRes.data?.profile) setProfile(profileRes.data.profile);
+      else if (profileRes.data) setProfile(profileRes.data);
+
+    } catch (error) {
+      console.error("Failed to fetch dashboard data:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const formatDate = (dateStr) => {
-    if (!dateStr) return "—";
+    if (!dateStr) return "";
     const d = new Date(dateStr);
     return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
   };
 
-  const typeLabel = (type) => {
-    const map = { full: "Full", quick: "Quick", budget: "Budget Check", seasonal: "Seasonal" };
-    return map[type] || type || "Prediction";
+  const formatCurrency = (val) => {
+    if (val === null || val === undefined || isNaN(val)) return null;
+    return `₹${Number(val).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   };
 
-  const typeIcon = (type) => {
-    const map = { full: BrainCircuit, quick: Zap, budget: Wallet, seasonal: Thermometer };
-    return map[type] || LineChart;
+  const formatNumber = (val) => {
+    if (val === null || val === undefined || isNaN(val)) return null;
+    return Number(val).toFixed(1);
   };
 
-  const typeColor = (type) => {
-    const map = {
-      full: { text: "text-indigo-500", bg: "bg-indigo-50" },
-      quick: { text: "text-amber-500", bg: "bg-amber-50" },
-      budget: { text: "text-emerald-500", bg: "bg-emerald-50" },
-      seasonal: { text: "text-rose-500", bg: "bg-rose-50" },
-    };
-    return map[type] || { text: "text-gray-500", bg: "bg-gray-100" };
-  };
+  const typeIcon = () => BrainCircuit;
+  const typeColor = () => ({ text: "text-indigo-500", bg: "bg-indigo-50" });
 
   const recent = history.slice(0, 5);
 
   const statCards = [
     {
       label: "Avg Daily Usage",
-      value: stats?.avgDailyKwh != null ? `${Number(stats.avgDailyKwh).toFixed(1)} kWh` : "—",
+      value: stats?.avgDailyKwh != null ? `${formatNumber(stats.avgDailyKwh)} kWh` : null,
       sub: "based on all predictions",
       icon: Zap,
       color: "text-indigo-500",
@@ -76,7 +80,7 @@ export default function Dashboard() {
     },
     {
       label: "Avg Monthly Cost",
-      value: stats?.avgMonthlyCost != null ? `₹${Number(stats.avgMonthlyCost).toFixed(0)}` : "—",
+      value: stats?.avgMonthlyCost != null ? formatCurrency(stats.avgMonthlyCost) : null,
       sub: "predicted monthly spend",
       icon: Wallet,
       color: "text-emerald-500",
@@ -84,7 +88,7 @@ export default function Dashboard() {
     },
     {
       label: "Total Predictions",
-      value: stats?.totalPredictions != null ? stats.totalPredictions : "—",
+      value: stats?.totalPredictions != null ? stats.totalPredictions : null,
       sub: "all time",
       icon: BarChart3,
       color: "text-violet-500",
@@ -92,9 +96,9 @@ export default function Dashboard() {
     },
     {
       label: "Budget Exceeded",
-      value: stats?.budgetExceededCount != null
-        ? `${stats.budgetExceededCount} / ${stats.totalPredictions ?? "—"}`
-        : "—",
+      value: stats?.budgetExceededCount != null && stats?.totalPredictions != null
+        ? `${stats.budgetExceededCount} / ${stats.totalPredictions}`
+        : null,
       sub: "predictions over budget",
       icon: TrendingUp,
       color: "text-rose-500",
@@ -112,6 +116,9 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  const hasHistory = history && history.length > 0;
+  const hasProfile = profile && Object.keys(profile).length > 0;
 
   return (
     <div className="flex flex-col gap-6 h-full">
@@ -131,30 +138,42 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        {statCards.map((card, i) => (
-          <div
-            key={i}
-            className="bg-white/70 backdrop-blur-sm border border-white/80 rounded-2xl p-5 flex flex-col gap-3"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{card.label}</span>
-              <div className={`w-8 h-8 ${card.bg} rounded-xl flex items-center justify-center`}>
-                <card.icon size={15} className={card.color} />
+        {statCards.map((card, i) => {
+          const hasValue = card.value !== null;
+          return (
+            <div
+              key={i}
+              className="bg-white/70 backdrop-blur-sm border border-white/80 rounded-2xl p-5 flex flex-col gap-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{card.label}</span>
+                <div className={`w-8 h-8 ${card.bg} rounded-xl flex items-center justify-center`}>
+                  <card.icon size={15} className={card.color} />
+                </div>
+              </div>
+              <div>
+                {hasValue ? (
+                  <>
+                    <p className="text-2xl font-bold text-gray-900 tracking-tight">{card.value}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{card.sub}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-gray-300 tracking-tight">No data</p>
+                    <p className="text-xs text-gray-300 mt-0.5">Run predictions to see stats</p>
+                  </>
+                )}
               </div>
             </div>
-            <div>
-              <p className="text-2xl font-bold text-gray-900 tracking-tight">{card.value}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{card.sub}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="flex gap-6 flex-1 min-h-0">
 
         <div className="flex-1 flex flex-col gap-4 min-w-0">
 
-          {profile && (
+          {hasProfile && (
             <div className="bg-white/70 backdrop-blur-sm border border-white/80 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-sm font-bold text-gray-800">Your Defaults</h2>
@@ -167,10 +186,10 @@ export default function Dashboard() {
               </div>
               <div className="grid grid-cols-4 gap-3">
                 {[
-                  { label: "Appliances", value: profile.defaultAppliances, unit: "devices", icon: Zap, color: "text-violet-500", bg: "bg-violet-50" },
-                  { label: "Usage Hours", value: profile.defaultUsageHours, unit: "hrs/day", icon: Clock, color: "text-amber-500", bg: "bg-amber-50" },
-                  { label: "Temperature", value: profile.defaultTemperature, unit: "°C", icon: Thermometer, color: "text-rose-500", bg: "bg-rose-50" },
-                  { label: "Rate", value: profile.defaultPerUnitRate, unit: "₹/kWh", icon: Wallet, color: "text-emerald-500", bg: "bg-emerald-50" },
+                  { label: "Household", value: profile.HouseholdSize, unit: "members", icon: Users, color: "text-blue-500", bg: "bg-blue-50" },
+                  { label: "Temperature", value: profile.DefaultTemperature, unit: "°C", icon: Thermometer, color: "text-rose-500", bg: "bg-rose-50" },
+                  { label: "Humidity", value: profile.DefaultHumidity, unit: "%", icon: Droplets, color: "text-cyan-500", bg: "bg-cyan-50" },
+                  { label: "Rate", value: profile.DefaultPerUnitRate, unit: "₹/kWh", icon: DollarSign, color: "text-emerald-500", bg: "bg-emerald-50" },
                 ].map((d, i) => (
                   <div key={i} className="rounded-xl bg-gray-50/70 border border-gray-100 p-3">
                     <div className="flex items-center gap-1.5 mb-2">
@@ -196,6 +215,11 @@ export default function Dashboard() {
                   <BarChart3 size={14} className="text-gray-500" />
                 </div>
                 <h2 className="text-sm font-bold text-gray-800">Recent Predictions</h2>
+                {hasHistory && (
+                  <span className="text-xs font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                    {recent.length}
+                  </span>
+                )}
               </div>
               <button
                 onClick={() => navigate("/predict")}
@@ -205,7 +229,7 @@ export default function Dashboard() {
               </button>
             </div>
 
-            {recent.length === 0 ? (
+            {!hasHistory ? (
               <div className="flex-1 flex flex-col items-center justify-center text-center py-8">
                 <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center mb-3">
                   <LineChart size={20} className="text-gray-300" />
@@ -220,14 +244,18 @@ export default function Dashboard() {
                 </button>
               </div>
             ) : (
-              <div className="space-y-2 overflow-y-auto flex-1">
+              <div className="space-y-2 overflow-y-auto flex-1 pr-1">
                 {recent.map((item, i) => {
-                  const colors = typeColor(item.predictionType);
-                  const Icon = typeIcon(item.predictionType);
-                  const exceeded = item.budget_exceeded;
+                  const colors = typeColor();
+                  const Icon = typeIcon();
+                  const exceeded = item.BudgetExceeded;
+                  const monthlyKwh = item.PredictedMonthlyKwh;
+                  const monthlyCost = item.PredictedMonthlyCost;
+                  const appliancesCount = item.AppliancesCount;
+
                   return (
                     <div
-                      key={item._id || i}
+                      key={item.Id || i}
                       className="flex items-center gap-4 p-3.5 rounded-xl bg-gray-50/60 border border-gray-100 hover:bg-white hover:border-gray-200 hover:shadow-sm transition-all duration-150"
                     >
                       <div className={`w-8 h-8 ${colors.bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
@@ -236,39 +264,42 @@ export default function Dashboard() {
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold text-gray-800">{typeLabel(item.predictionType)}</p>
-                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${
+                          <p className="text-sm font-semibold text-gray-800 truncate">
+                            {appliancesCount} appliance{appliancesCount !== 1 ? "s" : ""} · {item.HouseholdSize} members
+                          </p>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md flex-shrink-0 ${
                             exceeded === false
                               ? "bg-emerald-50 text-emerald-600"
-                              : exceeded
+                              : exceeded === true
                                 ? "bg-red-50 text-red-500"
                                 : "bg-gray-100 text-gray-400"
                           }`}>
-                            {exceeded === false ? "In budget" : exceeded ? "Over budget" : "No budget"}
+                            {exceeded === false ? "In budget" : exceeded === true ? "Over budget" : "No budget"}
                           </span>
                         </div>
                         <p className="text-xs text-gray-400 mt-0.5">
-                          {item.predicted_monthly_kwh != null ? `${Number(item.predicted_monthly_kwh).toFixed(1)} kWh` : "—"}
-                          {item.predicted_monthly_kwh != null && item.predicted_monthly_cost != null && " · "}
-                          {item.predicted_monthly_cost != null ? `₹${Number(item.predicted_monthly_cost).toFixed(0)}/mo` : ""}
+                          {monthlyKwh != null ? `${formatNumber(monthlyKwh)} kWh` : ""}
+                          {monthlyKwh != null && monthlyCost != null ? " · " : ""}
+                          {monthlyCost != null ? formatCurrency(monthlyCost) : ""}
                         </p>
                       </div>
 
                       <div className="text-right flex-shrink-0">
                         <div className="flex items-center gap-1 justify-end">
-                          {exceeded === false
-                            ? <TrendingDown size={12} className="text-emerald-400" />
-                            : exceeded
-                              ? <TrendingUp size={12} className="text-red-400" />
-                              : <Minus size={12} className="text-gray-300" />
-                          }
+                          {exceeded === false ? (
+                            <TrendingDown size={12} className="text-emerald-400" />
+                          ) : exceeded === true ? (
+                            <TrendingUp size={12} className="text-red-400" />
+                          ) : (
+                            <Minus size={12} className="text-gray-300" />
+                          )}
                           <span className="text-xs font-bold text-gray-700">
-                            {item.predicted_monthly_cost != null ? `₹${Number(item.predicted_monthly_cost).toFixed(0)}` : "—"}
+                            {monthlyCost != null ? formatCurrency(monthlyCost) : "—"}
                           </span>
                         </div>
                         <p className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1 justify-end">
                           <Calendar size={9} />
-                          {formatDate(item.createdAt)}
+                          {formatDate(item.CreatedAt)}
                         </p>
                       </div>
                     </div>
@@ -281,7 +312,7 @@ export default function Dashboard() {
 
         <div className="w-72 flex-shrink-0 flex flex-col gap-4">
 
-          {stats?.budgetExceededCount != null && stats?.totalPredictions > 0 && (
+          {stats && stats.totalPredictions > 0 && stats.budgetExceededCount !== undefined && (
             <div className="bg-white/70 backdrop-blur-sm border border-white/80 rounded-2xl p-5">
               <h2 className="text-sm font-bold text-gray-800 mb-4">Budget Health</h2>
 
@@ -292,10 +323,11 @@ export default function Dashboard() {
                     ? "bg-red-50 border-red-100"
                     : "bg-amber-50 border-amber-100"
               }`}>
-                {stats.budgetExceededCount === 0
-                  ? <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />
-                  : <AlertTriangle size={18} className="text-amber-500 flex-shrink-0" />
-                }
+                {stats.budgetExceededCount === 0 ? (
+                  <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />
+                ) : (
+                  <AlertTriangle size={18} className="text-amber-500 flex-shrink-0" />
+                )}
                 <div>
                   <p className={`text-sm font-bold ${
                     stats.budgetExceededCount === 0 ? "text-emerald-700"

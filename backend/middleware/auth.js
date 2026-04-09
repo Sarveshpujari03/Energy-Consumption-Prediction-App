@@ -11,7 +11,7 @@ module.exports = async (req, res, next) => {
     }
 
     if (token.startsWith('Bearer ')) {
-      token = token.slice(7, token.length).trim();  // Remove "Bearer " prefix
+      token = token.slice(7, token.length).trim(); 
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);

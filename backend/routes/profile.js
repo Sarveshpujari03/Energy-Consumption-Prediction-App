@@ -8,5 +8,7 @@ router.use(auth);
 router.get('/', profileController.getProfile);
 router.post('/create', profileController.createProfile);
 router.put('/update', profileController.updateProfile);
+router.post('/appliances', profileController.addAppliances);
+router.get('/appliances', profileController.getAppliances);
 
 module.exports = router;

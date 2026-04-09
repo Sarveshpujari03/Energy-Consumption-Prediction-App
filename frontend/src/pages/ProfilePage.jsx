@@ -1,268 +1,627 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { User, Home, Thermometer, Droplets, Clock, DollarSign, Save, X, Edit3, LineChart, Mail, ShieldCheck } from 'lucide-react';
+import {
+  User, Home, Thermometer, Droplets, DollarSign, Save,
+  Plus, Trash2, Plug, Mail, ShieldCheck, Search, AlertCircle,
+  Zap, Clock, Hash
+} from 'lucide-react';
+
+const APPLIANCE_DB = [
+  { name: 'LED Bulb', watts: 10, category: 'Lighting' },
+  { name: 'Ceiling Fan', watts: 75, category: 'Cooling' },
+  { name: 'Table Fan', watts: 50, category: 'Cooling' },
+  { name: 'Air Conditioner (1 Ton)', watts: 1000, category: 'Cooling' },
+  { name: 'Air Conditioner (1.5 Ton)', watts: 1500, category: 'Cooling' },
+  { name: 'Refrigerator (Single Door)', watts: 150, category: 'Kitchen' },
+  { name: 'Refrigerator (Double Door)', watts: 200, category: 'Kitchen' },
+  { name: 'Washing Machine', watts: 400, category: 'Laundry' },
+  { name: 'Television (32")', watts: 60, category: 'Entertainment' },
+  { name: 'Television (43")', watts: 80, category: 'Entertainment' },
+  { name: 'Laptop', watts: 65, category: 'Electronics' },
+  { name: 'Desktop PC', watts: 300, category: 'Electronics' },
+  { name: 'Water Heater/Geyser', watts: 2000, category: 'Heating' },
+  { name: 'Microwave Oven', watts: 800, category: 'Kitchen' },
+  { name: 'Induction Stove', watts: 1800, category: 'Kitchen' },
+  { name: 'Iron', watts: 1000, category: 'Household' },
+  { name: 'Mixie/Blender', watts: 500, category: 'Kitchen' },
+  { name: 'Room Heater', watts: 1500, category: 'Heating' },
+  { name: 'Aquaguard/Water Purifier', watts: 60, category: 'Water Purifier' },
+  { name: 'Exhaust Fan', watts: 30, category: 'Ventilation' },
+];
+
+const EMPTY_APPLIANCE = { name: '', quantity: '', usageHours: '', watts: '' };
 
 export default function ProfilePage() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
   const [formData, setFormData] = useState({
     householdSize: '',
-    defaultAppliances: '',
-    defaultUsageHours: '',
     defaultTemperature: '',
     defaultHumidity: '',
-    defaultPerUnitRate: ''
+    defaultPerUnitRate: '',
   });
-  const [originalData, setOriginalData] = useState(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
+  const [savedFormData, setSavedFormData] = useState(null);
+
+  const [appliances, setAppliances] = useState([]);
+  const [savedAppliances, setSavedAppliances] = useState([]);
+
+  const [applianceForm, setApplianceForm] = useState(EMPTY_APPLIANCE);
+  const [applianceErrors, setApplianceErrors] = useState({});
+  const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef(null);
+  const quantityRef = useRef(null);
+
+  const searchResults = search.trim()
+    ? APPLIANCE_DB.filter(a =>
+        a.name.toLowerCase().includes(search.toLowerCase()) ||
+        a.category.toLowerCase().includes(search.toLowerCase())
+      ).slice(0, 7)
+    : APPLIANCE_DB.slice(0, 7);
 
   useEffect(() => { fetchProfile(); }, []);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (searchRef.current && !searchRef.current.contains(e.target)) setSearchOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => {
+    if (!savedFormData) return;
+    const formChanged = JSON.stringify(formData) !== JSON.stringify(savedFormData);
+    const appsChanged = JSON.stringify(appliances) !== JSON.stringify(savedAppliances);
+    setIsDirty(formChanged || appsChanged);
+  }, [formData, appliances, savedFormData, savedAppliances]);
 
   const fetchProfile = async () => {
     try {
       setLoading(true);
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/profile/', {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await axios.get('http://localhost:5000/api/profile/', {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      setUser(response.data.user);
-      setProfile(response.data.profile);
-      if (response.data.profile) {
+      setUser(res.data.user);
+      setProfile(res.data.profile);
+      const normalized = (res.data.appliances || []).map(a => ({
+        applianceName: a.ApplianceName || a.applianceName,
+        quantity: a.Quantity ?? a.quantity,
+        usageHours: a.UsageHours ?? a.usageHours,
+        watts: a.Watts ?? a.watts ?? null,
+      }));
+      setAppliances(normalized);
+      setSavedAppliances(normalized);
+      if (res.data.profile) {
         const data = {
-          householdSize: response.data.profile.householdSize?.toString() || '',
-          defaultAppliances: response.data.profile.defaultAppliances?.toString() || '',
-          defaultUsageHours: response.data.profile.defaultUsageHours?.toString() || '',
-          defaultTemperature: response.data.profile.defaultTemperature?.toString() || '',
-          defaultHumidity: response.data.profile.defaultHumidity?.toString() || '',
-          defaultPerUnitRate: response.data.profile.defaultPerUnitRate?.toString() || ''
+          householdSize: res.data.profile.HouseholdSize?.toString() || '',
+          defaultTemperature: res.data.profile.DefaultTemperature?.toString() || '',
+          defaultHumidity: res.data.profile.DefaultHumidity?.toString() || '',
+          defaultPerUnitRate: res.data.profile.DefaultPerUnitRate?.toString() || '',
         };
         setFormData(data);
-        setOriginalData(data);
+        setSavedFormData(data);
       } else {
-        const empty = { householdSize: '', defaultAppliances: '', defaultUsageHours: '', defaultTemperature: '', defaultHumidity: '', defaultPerUnitRate: '' };
+        const empty = { householdSize: '', defaultTemperature: '', defaultHumidity: '', defaultPerUnitRate: '' };
         setFormData(empty);
-        setOriginalData(null);
+        setSavedFormData(empty);
       }
-    } catch (error) {
-      toast.error('Failed to fetch profile');
+    } catch {
+      toast.error('Failed to load profile');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => {
-      const newData = { ...prev, [name]: value };
-      if (originalData) {
-        const orig = Object.keys(originalData).reduce((acc, key) => { acc[key] = originalData[key]?.toString() || ''; return acc; }, {});
-        setIsEditing(JSON.stringify(newData) !== JSON.stringify(orig));
-      } else {
-        setIsEditing(Object.values(newData).some(val => val !== ''));
-      }
-      return newData;
-    });
+  const validate = () => {
+    const errs = {};
+    if (!formData.householdSize || parseInt(formData.householdSize) < 1) errs.householdSize = 'Required';
+    if (!formData.defaultTemperature) errs.defaultTemperature = 'Required';
+    if (!formData.defaultHumidity || parseFloat(formData.defaultHumidity) < 0 || parseFloat(formData.defaultHumidity) > 100) errs.defaultHumidity = '0–100';
+    if (!formData.defaultPerUnitRate || parseFloat(formData.defaultPerUnitRate) <= 0) errs.defaultPerUnitRate = 'Required';
+    setFormErrors(errs);
+    return Object.keys(errs).length === 0;
   };
 
-  const handleCancel = () => {
-    setFormData(originalData || { householdSize: '', defaultAppliances: '', defaultUsageHours: '', defaultTemperature: '', defaultHumidity: '', defaultPerUnitRate: '' });
-    setIsEditing(false);
-  };
-
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const handleSave = async () => {
+    if (!validate()) { toast.error('Fix the errors before saving'); return; }
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
-      const submitData = {
+      const payload = {
         householdSize: parseInt(formData.householdSize) || 4,
-        defaultAppliances: parseInt(formData.defaultAppliances) || 5,
-        defaultUsageHours: parseFloat(formData.defaultUsageHours) || 8,
         defaultTemperature: parseFloat(formData.defaultTemperature) || 25,
-        defaultHumidity: parseInt(formData.defaultHumidity) || 50,
-        defaultPerUnitRate: parseFloat(formData.defaultPerUnitRate) || 7.5
+        defaultHumidity: parseFloat(formData.defaultHumidity) || 50,
+        defaultPerUnitRate: parseFloat(formData.defaultPerUnitRate) || 7.5,
+        appliances,
       };
       if (profile) {
-        await axios.put('http://localhost:5000/api/profile/update', submitData, { headers: { Authorization: `Bearer ${token}` } });
-        toast.success('Profile updated successfully!');
+        await axios.put('http://localhost:5000/api/profile/update', payload, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
       } else {
-        await axios.post('http://localhost:5000/api/profile/create', submitData, { headers: { Authorization: `Bearer ${token}` } });
-        toast.success('Profile created successfully!');
+        await axios.post('http://localhost:5000/api/profile/create', payload, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
       }
-      setOriginalData(submitData);
-      setIsEditing(false);
+      toast.success('Profile saved');
+      setIsDirty(false);
       fetchProfile();
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Failed to save profile');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Save failed');
     } finally {
       setSaving(false);
     }
   };
 
+  const handleDiscard = () => {
+    if (savedFormData) setFormData(savedFormData);
+    setAppliances(savedAppliances);
+    setFormErrors({});
+    setIsDirty(false);
+  };
+
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+    if (formErrors[name]) setFormErrors(prev => ({ ...prev, [name]: '' }));
+  };
+
+  const validateAppliance = () => {
+    const errs = {};
+    if (!applianceForm.name.trim()) errs.name = 'Select or type an appliance name';
+    if (!applianceForm.quantity || parseFloat(applianceForm.quantity) < 1) errs.quantity = 'Enter quantity';
+    if (applianceForm.usageHours === '' || parseFloat(applianceForm.usageHours) < 0) errs.usageHours = 'Enter daily hours';
+    setApplianceErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const addAppliance = () => {
+    if (!validateAppliance()) return;
+    setAppliances(prev => [...prev, {
+      applianceName: applianceForm.name,
+      quantity: parseFloat(applianceForm.quantity),
+      usageHours: parseFloat(applianceForm.usageHours),
+      watts: applianceForm.watts ? parseFloat(applianceForm.watts) : null,
+    }]);
+    setApplianceForm(EMPTY_APPLIANCE);
+    setSearch('');
+    setApplianceErrors({});
+  };
+
+  const removeAppliance = (i) => setAppliances(prev => prev.filter((_, idx) => idx !== i));
+
+  const selectSuggestion = (item) => {
+    setApplianceForm(p => ({ ...p, name: item.name, watts: item.watts.toString() }));
+    setSearch(item.name);
+    setSearchOpen(false);
+    if (applianceErrors.name) setApplianceErrors(p => ({ ...p, name: '' }));
+    setTimeout(() => quantityRef.current?.focus(), 50);
+  };
+
+  const totalLoad = appliances.reduce((s, a) => {
+    const w = a.watts || APPLIANCE_DB.find(d => d.name === a.applianceName)?.watts || 0;
+    return s + w * a.quantity;
+  }, 0);
+
+  const totalDailyKwh = appliances.reduce((s, a) => {
+    const w = a.watts || APPLIANCE_DB.find(d => d.name === a.applianceName)?.watts || 0;
+    return s + (w * a.quantity * a.usageHours) / 1000;
+  }, 0);
+
+  const previewKwh = applianceForm.watts && applianceForm.quantity && applianceForm.usageHours
+    ? ((parseFloat(applianceForm.watts) || 0) * parseFloat(applianceForm.quantity) * parseFloat(applianceForm.usageHours) / 1000).toFixed(2)
+    : null;
+
   if (loading || !user) {
     return (
-      <div className="min-h-full flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-8 h-8 border-2 border-gray-200 border-t-indigo-500 rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-sm text-gray-400">Loading profile...</p>
-        </div>
+      <div className="min-h-full flex items-center justify-center bg-zinc-50">
+        <div className="w-5 h-5 border-2 border-zinc-200 border-t-zinc-700 rounded-full animate-spin" />
       </div>
     );
   }
 
-  const fields = [
-    { name: 'householdSize',      label: 'Household Size',  icon: Home,        color: 'text-indigo-500', bgColor: 'bg-indigo-50',  placeholder: 'Enter the number of Appliances',   unit: 'members',  min: '1',              hint: 'Number of people living in your home' },
-    { name: 'defaultAppliances',  label: 'Appliances',      icon: LineChart,   color: 'text-violet-500', bgColor: 'bg-violet-50',  placeholder: 'What is the expected temparature',   unit: 'devices',  min: '1',              hint: 'Total active electrical appliances' },
-    { name: 'defaultUsageHours',  label: 'Usage Hours',     icon: Clock,       color: 'text-amber-500',  bgColor: 'bg-amber-50',   placeholder: 'What is the expected Humidity',   unit: 'hrs / day',min: '1', max: '24', step: '0.5', hint: 'Average daily electricity usage duration' },
-    { name: 'defaultTemperature', label: 'Temperature',     icon: Thermometer, color: 'text-rose-500',   bgColor: 'bg-rose-50',    placeholder: 'Avg daily usage hours',  unit: '°C',       min: '15', max: '45', step: '0.1', hint: 'Typical ambient temperature in your area' },
-    { name: 'defaultHumidity',    label: 'Humidity',        icon: Droplets,    color: 'text-cyan-500',   bgColor: 'bg-cyan-50',    placeholder: 'Enter the rate per unit',  unit: '%',        min: '0', max: '100', hint: 'Average relative humidity percentage' },
-    { name: 'defaultPerUnitRate', label: 'Rate per Unit',   icon: DollarSign,  color: 'text-emerald-500',bgColor: 'bg-emerald-50', placeholder: 'Enter your allocated monthly budget', unit: '₹ / kWh',  min: '0', step: '0.1', hint: 'Your electricity tariff rate from provider' },
-  ];
+  const inputCls = (err) =>
+    `w-full px-3 py-2 text-sm bg-white border rounded-lg outline-none transition-all placeholder:text-zinc-300
+    [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
+    ${err ? 'border-red-300 focus:border-red-400 focus:ring-2 focus:ring-red-50 text-red-700' : 'border-zinc-200 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-100 text-zinc-800'}`;
 
   return (
-    <div className="flex gap-10 h-full">
+    <div className="flex h-full bg-zinc-50" style={{ fontFamily: "'DM Sans', system-ui, sans-serif" }}>
 
-      <div className="w-64 flex-shrink-0 flex flex-col gap-6 pt-2">
-        <div className="flex flex-col items-center text-center">
-          <div className="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-400 to-green-500 flex items-center justify-center shadow-xl shadow-emerald-500/25 mb-4">
-            <User size={40} className="text-white" strokeWidth={1.5} />
+      <aside className="w-64 flex-shrink-0 bg-white border-r border-zinc-200 flex flex-col overflow-y-auto">
+        <div className="p-5 border-b border-zinc-100">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-zinc-900 flex items-center justify-center flex-shrink-0">
+              <User size={17} className="text-white" strokeWidth={1.5} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-zinc-900 truncate leading-tight">{user.name}</p>
+              <p className="text-[11px] text-zinc-400 truncate mt-0.5">{user.email}</p>
+            </div>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 tracking-tight">{user.name}</h2>
-          <p className="text-sm text-gray-400 mt-0.5">{user.email}</p>
-          <span className={`inline-flex items-center gap-1.5 mt-3 px-3 py-1 rounded-full text-xs font-semibold ${
-            user.role === 'admin'
-              ? 'bg-violet-50 text-violet-600 border border-violet-100'
-              : 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+            user.role === 'admin' ? 'bg-violet-50 text-violet-700' : 'bg-emerald-50 text-emerald-700'
           }`}>
-            <ShieldCheck size={11} />
+            <ShieldCheck size={10} />
             {user.role?.charAt(0).toUpperCase() + user.role?.slice(1)}
           </span>
         </div>
 
-        <div className="border-t border-gray-200/60 pt-5 space-y-4">
-          <div className="flex items-center gap-3 text-sm text-gray-500">
-            <Mail size={15} className="text-gray-300 flex-shrink-0" />
-            <span className="truncate text-xs">{user.email}</span>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-gray-500">
-            <Home size={15} className="text-gray-300 flex-shrink-0" />
-            <span className="text-xs">{formData.householdSize ? `${formData.householdSize} member household` : 'Household not set'}</span>
-          </div>
-          <div className="flex items-center gap-3 text-sm text-gray-500">
-            <DollarSign size={15} className="text-gray-300 flex-shrink-0" />
-            <span className="text-xs">{formData.defaultPerUnitRate ? `₹${formData.defaultPerUnitRate} per kWh` : 'Tariff not set'}</span>
-          </div>
-        </div>
-
-        <div className="border-t border-gray-200/60 pt-5">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Overview</p>
-          <div className="space-y-3">
+        <div className="p-5 border-b border-zinc-100">
+          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3">Current Config</p>
+          <div className="space-y-2.5">
             {[
-              { label: 'Appliances', value: formData.defaultAppliances || '—', suffix: formData.defaultAppliances ? ' devices' : '' },
-              { label: 'Daily usage', value: formData.defaultUsageHours || '—', suffix: formData.defaultUsageHours ? ' hrs' : '' },
-              { label: 'Temperature', value: formData.defaultTemperature || '—', suffix: formData.defaultTemperature ? ' °C' : '' },
-              { label: 'Humidity', value: formData.defaultHumidity || '—', suffix: formData.defaultHumidity ? ' %' : '' },
-            ].map((s, i) => (
-              <div key={i} className="flex items-center justify-between">
-                <span className="text-xs text-gray-400">{s.label}</span>
-                <span className="text-xs font-semibold text-gray-700">{s.value}{s.suffix}</span>
+              { icon: Home, label: formData.householdSize ? `${formData.householdSize} members` : 'Not set' },
+              { icon: Thermometer, label: formData.defaultTemperature ? `${formData.defaultTemperature}°C` : 'Not set' },
+              { icon: Droplets, label: formData.defaultHumidity ? `${formData.defaultHumidity}% RH` : 'Not set' },
+              { icon: DollarSign, label: formData.defaultPerUnitRate ? `₹${formData.defaultPerUnitRate}/kWh` : 'Not set' },
+            ].map(({ icon: Icon, label }, i) => (
+              <div key={i} className="flex items-center gap-2.5">
+                <Icon size={13} className="text-zinc-300 flex-shrink-0" />
+                <span className={`text-xs ${label === 'Not set' ? 'text-zinc-300 italic' : 'text-zinc-600'}`}>{label}</span>
               </div>
             ))}
           </div>
         </div>
-      </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        <div className="flex items-center justify-between mb-6 pb-5 border-b border-gray-200/60">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 tracking-tight">Default Settings</h1>
-            <p className="text-sm text-gray-400 mt-0.5">These values are used as defaults when making predictions</p>
-          </div>
-          {!isEditing ? (
-            <button
-              onClick={() => setIsEditing(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-px hover:shadow-lg hover:shadow-gray-900/15"
-            >
-              <Edit3 size={13} />
-              Edit Settings
-            </button>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={handleCancel}
-                disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 text-sm font-semibold rounded-xl transition-all duration-200 disabled:opacity-50"
-              >
-                <X size={13} />
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !isEditing}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-xl transition-all duration-200 hover:-translate-y-px hover:shadow-lg hover:shadow-indigo-500/25 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-              >
-                <Save size={13} />
-                {saving ? 'Saving...' : 'Save Changes'}
-              </button>
+        <div className="p-5">
+          <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-3">Inventory Summary</p>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-zinc-400">Devices</span>
+              <span className="text-xs font-bold text-zinc-700 tabular-nums">{appliances.length || '—'}</span>
             </div>
-          )}
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-zinc-400">Total load</span>
+              <span className="text-xs font-bold text-zinc-700 tabular-nums">{appliances.length ? `${totalLoad.toLocaleString()} W` : '—'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-zinc-400">Daily usage</span>
+              <span className="text-xs font-bold text-zinc-700 tabular-nums">{appliances.length ? `${totalDailyKwh.toFixed(1)} kWh` : '—'}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-zinc-400">Monthly est.</span>
+              <span className="text-xs font-bold text-zinc-700 tabular-nums">
+                {appliances.length && formData.defaultPerUnitRate
+                  ? `₹${(totalDailyKwh * 30 * parseFloat(formData.defaultPerUnitRate)).toFixed(0)}`
+                  : '—'}
+              </span>
+            </div>
+          </div>
         </div>
 
-        {!profile && !isEditing && (
-          <div className="mb-6 p-4 bg-amber-50 border border-amber-200/60 rounded-xl flex items-center gap-3">
-            <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
-              <Edit3 size={14} className="text-amber-600" />
+        {isDirty && (
+          <div className="mx-4 mb-4 mt-auto p-3 bg-amber-50 border border-amber-200 rounded-xl">
+            <div className="flex items-center gap-1.5 mb-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <p className="text-[11px] font-bold text-amber-700">Unsaved changes</p>
             </div>
-            <div>
-              <p className="text-sm font-semibold text-amber-800">No defaults configured</p>
-              <p className="text-xs text-amber-600 mt-0.5">Click Edit Settings to set up your prediction defaults.</p>
-            </div>
+            <p className="text-[10px] text-amber-600">Click Save Changes to persist</p>
           </div>
         )}
+      </aside>
 
-        <div className="grid grid-cols-2 gap-4 flex-1">
-          {fields.map((f) => (
-            <div
-              key={f.name}
-              className={`rounded-2xl border p-5 flex flex-col gap-3 transition-all duration-200 ${
-                isEditing
-                  ? 'bg-white border-gray-200 shadow-sm'
-                  : 'bg-white/60 border-gray-100'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className={`w-8 h-8 ${f.bgColor} rounded-lg flex items-center justify-center`}>
-                    <f.icon size={15} className={f.color} />
-                  </div>
-                  <span className="text-sm font-semibold text-gray-700">{f.label}</span>
-                </div>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-md font-medium">{f.unit}</span>
-              </div>
+      <main className="flex-1 min-w-0 flex flex-col overflow-y-auto">
 
-              <div className={`rounded-xl px-4 py-3 transition-all duration-200 ${isEditing ? 'bg-gray-50 border border-gray-200 focus-within:border-indigo-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-500/10' : 'bg-gray-50/50'}`}>
-                <input
-                  name={f.name}
-                  type={f.type || 'number'}
-                  value={formData[f.name]}
-                  onChange={handleInputChange}
-                  disabled={!isEditing}
-                  min={f.min}
-                  max={f.max}
-                  step={f.step}
-                  placeholder={f.placeholder}
-                  className="w-full text-2xl font-bold text-gray-900 bg-transparent outline-none placeholder-gray-300 disabled:cursor-default [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-              </div>
-
-              <p className="text-xs text-gray-400 leading-relaxed">{f.hint}</p>
-            </div>
-          ))}
+        <div className="bg-white border-b border-zinc-200 px-7 py-4 flex items-center justify-between sticky top-0 z-20">
+          <div>
+            <h1 className="text-sm font-bold text-zinc-900 tracking-tight">Household Profile</h1>
+            <p className="text-xs text-zinc-400 mt-0.5">All changes are batched — save when ready</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isDirty && (
+              <button onClick={handleDiscard} disabled={saving}
+                className="px-3.5 py-1.5 text-xs font-semibold text-zinc-500 border border-zinc-200 rounded-lg hover:bg-zinc-50 transition-colors">
+                Discard
+              </button>
+            )}
+            <button onClick={handleSave} disabled={saving || !isDirty}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-zinc-900 text-white text-xs font-semibold rounded-lg hover:bg-zinc-800 active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:scale-100">
+              <Save size={12} />
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
+          </div>
         </div>
-      </div>
+
+        <div className="p-7 grid grid-cols-3 gap-6 items-start">
+
+          <div className="col-span-1 flex flex-col gap-4">
+            <div>
+              <h2 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mb-3">Default Parameters</h2>
+              <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden divide-y divide-zinc-100">
+
+                {[
+                  { name: 'householdSize', label: 'Household Size', icon: Home, unit: 'members', placeholder: '4', type: 'number', min: '1' },
+                  { name: 'defaultPerUnitRate', label: 'Tariff Rate', icon: DollarSign, unit: '₹/kWh', placeholder: '7.50', type: 'number', min: '0', step: '0.1' },
+                  { name: 'defaultTemperature', label: 'Temperature', icon: Thermometer, unit: '°C', placeholder: '28', type: 'number', step: '0.1' },
+                  { name: 'defaultHumidity', label: 'Humidity', icon: Droplets, unit: '%', placeholder: '60', type: 'number', min: '0', max: '100' },
+                ].map(({ name, label, icon: Icon, unit, placeholder, ...rest }) => (
+                  <div key={name} className="px-4 py-3.5">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <Icon size={13} className="text-zinc-400" />
+                        <span className="text-xs font-semibold text-zinc-600">{label}</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-zinc-400 bg-zinc-100 px-1.5 py-0.5 rounded">{unit}</span>
+                    </div>
+                    <input
+                      name={name}
+                      value={formData[name]}
+                      onChange={handleFormChange}
+                      placeholder={placeholder}
+                      {...rest}
+                      className={`w-full px-3 py-2 text-sm bg-zinc-50 border rounded-lg outline-none transition-all placeholder:text-zinc-300
+                        [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none
+                        ${formErrors[name] ? 'border-red-300 focus:ring-2 focus:ring-red-50 text-red-700' : 'border-zinc-200 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-100 text-zinc-800'}`}
+                    />
+                    {formErrors[name] && (
+                      <p className="text-[10px] text-red-500 mt-1 flex items-center gap-1">
+                        <AlertCircle size={9} />{formErrors[name]}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-zinc-900 rounded-2xl p-4 text-white">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-3">Quick Stats</p>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-zinc-400">Total load</span>
+                  <span className="text-sm font-bold tabular-nums">{totalLoad ? `${totalLoad.toLocaleString()} W` : '—'}</span>
+                </div>
+                <div className="w-full h-px bg-zinc-800" />
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-zinc-400">Daily</span>
+                  <span className="text-sm font-bold tabular-nums">{totalDailyKwh ? `${totalDailyKwh.toFixed(2)} kWh` : '—'}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-zinc-400">Monthly</span>
+                  <span className="text-sm font-bold tabular-nums">
+                    {totalDailyKwh ? `${(totalDailyKwh * 30).toFixed(1)} kWh` : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-zinc-400">Est. cost</span>
+                  <span className="text-sm font-bold text-emerald-400 tabular-nums">
+                    {totalDailyKwh && formData.defaultPerUnitRate
+                      ? `₹${(totalDailyKwh * 30 * parseFloat(formData.defaultPerUnitRate)).toFixed(0)}/mo`
+                      : '—'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="col-span-2 flex flex-col gap-4">
+            <div>
+              <h2 className="text-[11px] font-bold text-zinc-400 uppercase tracking-widest mb-3">Appliance Inventory</h2>
+
+              <div className="bg-white border border-zinc-200 rounded-2xl overflow-hidden">
+                <div className="p-5 border-b border-zinc-100 bg-zinc-50/50">
+                  <p className="text-xs font-bold text-zinc-700 mb-4">Add New Appliance</p>
+
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div className="col-span-2" ref={searchRef}>
+                      <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                        Appliance Name
+                      </label>
+                      <div className="relative">
+                        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                        <input
+                          value={search}
+                          onChange={(e) => {
+                            setSearch(e.target.value);
+                            setApplianceForm(p => ({ ...p, name: e.target.value, watts: '' }));
+                            setSearchOpen(true);
+                            if (applianceErrors.name) setApplianceErrors(p => ({ ...p, name: '' }));
+                          }}
+                          onFocus={() => setSearchOpen(true)}
+                          placeholder="e.g. Air Conditioner, Ceiling Fan, LED Bulb…"
+                          className={`w-full pl-9 pr-3 py-2.5 text-sm border rounded-lg outline-none transition-all placeholder:text-zinc-300
+                            ${applianceErrors.name ? 'border-red-300 focus:ring-2 focus:ring-red-50 bg-red-50' : 'border-zinc-200 focus:border-zinc-500 focus:ring-2 focus:ring-zinc-100 bg-white'}`}
+                        />
+                        {applianceErrors.name && (
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                            <AlertCircle size={14} className="text-red-400" />
+                          </div>
+                        )}
+                      </div>
+                      {applianceErrors.name && (
+                        <p className="text-[11px] text-red-500 mt-1">{applianceErrors.name}</p>
+                      )}
+                      {searchOpen && searchResults.length > 0 && (
+                        <div className="absolute z-30 mt-1 w-full max-w-lg bg-white border border-zinc-200 rounded-xl shadow-xl overflow-hidden">
+                          <div className="px-3 py-2 border-b border-zinc-100">
+                            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Suggestions</p>
+                          </div>
+                          {searchResults.map(item => (
+                            <button key={item.name} onMouseDown={() => selectSuggestion(item)}
+                              className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-zinc-50 border-b border-zinc-100 last:border-0 transition-colors text-left">
+                              <div>
+                                <p className="text-xs font-semibold text-zinc-800">{item.name}</p>
+                                <p className="text-[10px] text-zinc-400">{item.category}</p>
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
+                                <Zap size={10} className="text-amber-500" />
+                                <span className="text-[11px] font-bold text-zinc-600 font-mono">{item.watts}W</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                        <Hash size={10} />
+                        Quantity
+                      </label>
+                      <input
+                        ref={quantityRef}
+                        type="number" min="1"
+                        placeholder="How many units do you have?"
+                        value={applianceForm.quantity}
+                        onChange={(e) => {
+                          setApplianceForm(p => ({ ...p, quantity: e.target.value }));
+                          if (applianceErrors.quantity) setApplianceErrors(p => ({ ...p, quantity: '' }));
+                        }}
+                        className={inputCls(applianceErrors.quantity)}
+                      />
+                      {applianceErrors.quantity && (
+                        <p className="text-[11px] text-red-500 mt-1">{applianceErrors.quantity}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                        <Clock size={10} />
+                        Daily Usage Hours
+                      </label>
+                      <input
+                        type="number" min="0" max="24" step="0.5"
+                        placeholder="Hours used per day (0–24)"
+                        value={applianceForm.usageHours}
+                        onChange={(e) => {
+                          setApplianceForm(p => ({ ...p, usageHours: e.target.value }));
+                          if (applianceErrors.usageHours) setApplianceErrors(p => ({ ...p, usageHours: '' }));
+                        }}
+                        className={inputCls(applianceErrors.usageHours)}
+                      />
+                      {applianceErrors.usageHours && (
+                        <p className="text-[11px] text-red-500 mt-1">{applianceErrors.usageHours}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="flex items-center gap-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                        <Zap size={10} />
+                        Power Rating
+                        <span className="normal-case font-normal text-zinc-300">(optional — auto-filled)</span>
+                      </label>
+                      <input
+                        type="number" min="1"
+                        placeholder="Wattage, e.g. 1000"
+                        value={applianceForm.watts}
+                        onChange={(e) => setApplianceForm(p => ({ ...p, watts: e.target.value }))}
+                        className={inputCls(false)}
+                      />
+                    </div>
+
+                    <div className="flex items-end">
+                      {previewKwh !== null ? (
+                        <div className="w-full h-full flex flex-col justify-end">
+                          <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2.5 flex items-center justify-between">
+                            <div>
+                              <p className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">Daily consumption</p>
+                              <p className="text-lg font-bold text-emerald-700 tabular-nums leading-tight">{previewKwh} <span className="text-xs font-semibold">kWh</span></p>
+                            </div>
+                            <Zap size={16} className="text-emerald-400" />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-full h-full flex flex-col justify-end">
+                          <div className="bg-zinc-100 border border-zinc-200 rounded-lg px-3 py-2.5">
+                            <p className="text-[10px] text-zinc-400">Fill wattage + qty + hours to preview consumption</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <button onClick={addAppliance}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 bg-zinc-900 text-white text-xs font-bold rounded-xl hover:bg-zinc-800 active:scale-[0.99] transition-all">
+                    <Plus size={13} />
+                    Add to Inventory
+                  </button>
+                </div>
+
+                {appliances.length === 0 ? (
+                  <div className="py-16 text-center">
+                    <div className="w-12 h-12 rounded-2xl bg-zinc-100 flex items-center justify-center mx-auto mb-3">
+                      <Plug size={20} className="text-zinc-400" />
+                    </div>
+                    <p className="text-sm font-semibold text-zinc-500">No appliances yet</p>
+                    <p className="text-xs text-zinc-400 mt-1">Add devices using the form above</p>
+                  </div>
+                ) : (
+                  <div>
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-zinc-100">
+                          <th className="text-left text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-5 py-3">Device</th>
+                          <th className="text-center text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-3 py-3">Qty</th>
+                          <th className="text-center text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-3 py-3">Power</th>
+                          <th className="text-center text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-3 py-3">Hrs/Day</th>
+                          <th className="text-right text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-5 py-3">Daily kWh</th>
+                          <th className="w-10 px-3 py-3" />
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-50">
+                        {appliances.map((a, idx) => {
+                          const w = a.watts || APPLIANCE_DB.find(d => d.name === a.applianceName)?.watts || 0;
+                          const kwh = (w * a.quantity * a.usageHours) / 1000;
+                          return (
+                            <tr key={idx} className="hover:bg-zinc-50/80 group transition-colors">
+                              <td className="px-5 py-3">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-7 h-7 rounded-lg bg-zinc-100 flex items-center justify-center flex-shrink-0">
+                                    <Plug size={12} className="text-zinc-400" />
+                                  </div>
+                                  <span className="text-sm font-semibold text-zinc-800">{a.applianceName}</span>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-zinc-100 text-xs font-bold text-zinc-600 tabular-nums">{a.quantity}</span>
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <span className="text-xs font-semibold text-zinc-600 tabular-nums">{w ? `${w}W` : '—'}</span>
+                              </td>
+                              <td className="px-3 py-3 text-center">
+                                <span className="text-xs font-semibold text-zinc-600 tabular-nums">{a.usageHours}h</span>
+                              </td>
+                              <td className="px-5 py-3 text-right">
+                                <span className="text-sm font-bold text-zinc-800 tabular-nums">{kwh.toFixed(2)}</span>
+                              </td>
+                              <td className="px-3 py-3 text-right">
+                                <button onClick={() => removeAppliance(idx)}
+                                  className="p-1.5 text-zinc-300 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all">
+                                  <Trash2 size={12} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-zinc-200 bg-zinc-50">
+                          <td className="px-5 py-3 text-xs font-bold text-zinc-500">
+                            {appliances.length} device{appliances.length !== 1 ? 's' : ''}
+                          </td>
+                          <td colSpan={2} className="px-3 py-3 text-center">
+                            <span className="text-xs font-bold text-zinc-600 tabular-nums">{totalLoad.toLocaleString()} W total</span>
+                          </td>
+                          <td />
+                          <td className="px-5 py-3 text-right">
+                            <span className="text-sm font-bold text-zinc-900 tabular-nums">{totalDailyKwh.toFixed(2)} kWh</span>
+                          </td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
     </div>
   );
 }

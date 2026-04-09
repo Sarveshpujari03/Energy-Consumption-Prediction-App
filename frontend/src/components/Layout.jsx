@@ -29,8 +29,7 @@ export default function Layout({ user, setUser }) {
 
       <div className="flex flex-1">
 
-        <aside className="w-24 flex flex-col items-center pt-4 pb-4 bg-transparent border-r border-gray-200/40 flex-shrink-0">
-
+        <aside className="w-20 flex flex-col items-center pt-4 pb-4 bg-transparent border-r border-gray-200/40 flex-shrink-0">
           <nav className="flex flex-col items-center gap-0.5 flex-1 w-full">
             {menuItems.map((item) => {
               const isActive = location.pathname === item.path;
@@ -38,7 +37,7 @@ export default function Layout({ user, setUser }) {
                 <Link
                   key={item.path}
                   to={item.path}
-                  className="relative flex flex-col items-center justify-center gap-1.5 w-full py-3.5 transition-all duration-200 group"
+                  className="relative flex flex-col items-center justify-center gap-1.5 w-full py-3.5 transition-all duration-200 group "
                 >
                   {isActive && (
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-8 bg-indigo-500 rounded-r-full" />
